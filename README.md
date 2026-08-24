@@ -23,7 +23,7 @@ library.
 | `MinHashLSHForest` | add/index/top-k query, membership, emptiness, and signature reconstruction |
 | batch scoring | `jaccard_many` scores compatible MinHash objects with one Mojo call |
 
-The 45 tests compare directly against datasketch 2.0.0 or exercise FFI safety
+The 47 tests compare directly against datasketch 2.0.0 or exercise FFI safety
 checks. They assert exact
 permutation arrays, exact hash values for all three current schemes, exact HLL
 registers and estimates, optimized LSH parameters, bucket behavior, candidate
@@ -108,27 +108,31 @@ short LSH query) on an Intel Xeon E5-2697 v4 at 2.30 GHz, Linux x86-64, Python
 
 | case | mojo-datasketch | datasketch | result |
 | --- | ---: | ---: | ---: |
-| MinHash.update_batch (100k x 128) | 67.98 ms | 173.44 ms | 2.55x faster |
-| HyperLogLog update (500k) | 212.42 ms | 352.48 ms | 1.66x faster |
-| Jaccard score 50k signatures | 84.58 ms | 165.05 ms | 1.95x faster |
-| MinHashLSH.query (20k index) | 0.02 ms | 0.03 ms | 1.12x faster |
+| MinHash.update_batch (100k x 128) | 50.61 ms | 83.59 ms | 1.65x faster |
+| HyperLogLog update (500k) | 125.16 ms | 376.69 ms | 3.01x faster |
+| Jaccard score 50k signatures | 36.29 ms | 103.83 ms | 2.86x faster |
+| MinHashLSH.query (20k index) | 0.02 ms | 0.03 ms | 1.21x faster |
 
 The MinHash win comes from fusing affine permutation application with the
 column minima. Upstream materializes a `batch_size × num_perm` intermediate;
 the Mojo kernel scans hashes per permutation and retains only one minimum.
 HLL batch update hashes values in Python once, then updates every register in
-one FFI call instead of crossing Python method dispatch for each item.
+one FFI call instead of crossing Python method dispatch for each item. Integer
+hash results are range-checked in bulk and converted with one contiguous NumPy
+allocation rather than a second Python list.
 
 `jaccard_many` detects signature row views that form one contiguous matrix and
 passes that NumPy storage to Mojo without copying. Independent signature arrays
 fall back to one contiguous stack. The scoring kernel compares a native SIMD
 width at a time, handles the remainder with a scalar tail, and parallelizes
-large matrices. LSH lookup itself is dictionary-bound rather than
+matrices with at least one million signature elements; smaller inputs stay
+serial to avoid thread-pool overhead. LSH lookup itself is dictionary-bound rather than
 arithmetic-bound, so its small timing difference should not be treated as a
 substantial kernel speedup.
 
-No GPU path was added or benchmarked. The scoring workload has low arithmetic
-intensity and would also require host/device transfers.
+No GPU path was added or benchmarked. The targeted HLL register update and
+signature scoring kernels have low arithmetic intensity, irregular writes or
+host/device transfer overhead, so neither justifies occupying a shared GPU.
 
 Run the benchmark on another machine with:
 

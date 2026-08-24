@@ -81,7 +81,9 @@ def test_jaccard_many_matches_individual_upstream_scores():
 
 
 @pytest.mark.parametrize("scheme,dtype", [("affine32", np.uint32), ("affine64", np.uint64)])
-@pytest.mark.parametrize("rows,num_perm", [(9, 3), (9, 127), (800, 127)])
+@pytest.mark.parametrize(
+    "rows,num_perm", [(9, 3), (9, 127), (800, 127), (8_000, 127)]
+)
 def test_jaccard_many_simd_tail_and_parallel_threshold(
     scheme, dtype, rows, num_perm
 ):
@@ -132,6 +134,9 @@ def test_ffi_rejects_reassigned_wrong_dtype_strides_and_readonly_outputs():
     left.hashvalues = np.zeros(16, dtype=np.uint64)
     with pytest.raises(ValueError, match="dtype uint32"):
         left.jaccard(right)
+    with pytest.raises(ValueError, match="numpy.ndarray"):
+        left.hashvalues = [0] * 16
+        mojo.jaccard_many(right, [left])
 
     left.hashvalues = np.zeros(32, dtype=np.uint32)[::2]
     with pytest.raises(ValueError, match="C-contiguous"):

@@ -35,6 +35,13 @@ def _unsigned_array(values, dtype: np.dtype, label: str) -> np.ndarray:
     if isinstance(values, np.ndarray) and values.dtype == dtype:
         return np.ascontiguousarray(values)
     materialized = list(values)
+    candidate = np.asarray(materialized)
+    if candidate.dtype.kind in "iu":
+        if candidate.size and (
+            int(candidate.min()) < 0 or int(candidate.max()) > maximum
+        ):
+            raise ValueError(f"{label} out of range for dtype {dtype}")
+        return np.ascontiguousarray(candidate, dtype=dtype)
     checked = []
     for value in materialized:
         try:
@@ -360,7 +367,9 @@ def jaccard_many(query: MinHash, sketches: Iterable[MinHash]) -> np.ndarray:
     next_addr = 0
     zero_copy = True
     for item in items:
-        if getattr(item, "scheme", None) != scheme:
+        native = item.__class__ is MinHash
+        item_scheme = item.scheme if native else getattr(item, "scheme", None)
+        if item_scheme != scheme:
             raise ValueError(
                 "Cannot compute Jaccard given MinHash with different "
                 "permutation schemes"
@@ -370,30 +379,26 @@ def jaccard_many(query: MinHash, sketches: Iterable[MinHash]) -> np.ndarray:
                 "Cannot compute Jaccard given MinHash with different seeds"
             )
         values = item.hashvalues
-        if len(values) != count:
+        cached = native and values is item._hashvalues_ref
+        if not cached and not isinstance(values, np.ndarray):
+            raise ValueError("hashvalues must be a numpy.ndarray")
+        if values.ndim != 1 or values.size != count:
             raise ValueError(
                 "Cannot compute Jaccard given MinHash with different numbers "
                 "of permutation functions"
             )
-        if (
-            not isinstance(values, np.ndarray)
-            or values.ndim != 1
-            or values.dtype != dtype
-        ):
+        if values.dtype != dtype:
             raise ValueError(
                 f"hashvalues must be a one-dimensional array with dtype {dtype}"
             )
-        native = isinstance(item, MinHash)
-        cached = native and values is item._hashvalues_ref
+        if not values.flags.c_contiguous:
+            raise ValueError("hashvalues must be C-contiguous")
         item_addr = item._hashvalues_addr if native else 0
         item_root = item._hashvalues_root if native else None
         item_nbytes = item._hashvalues_nbytes if native else 0
         if (
             not cached
             or not item._hashvalues_zero_copy
-            or values.ndim != 1
-            or values.dtype != dtype
-            or not values.flags.c_contiguous
             or values.nbytes != item_nbytes
             or (
                 shared_root is not None
