@@ -1,16 +1,13 @@
 """Compute kernels for MinHash and HyperLogLog."""
 
-from std.algorithm import parallelize
 from std.sys.info import simd_width_of
 
-comptime U8Ptr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
-comptime I8Ptr = UnsafePointer[Int8, AnyOrigin[mut=True]]
-comptime U32Ptr = UnsafePointer[UInt32, AnyOrigin[mut=True]]
-comptime U64Ptr = UnsafePointer[UInt64, AnyOrigin[mut=True]]
-comptime F64Ptr = UnsafePointer[Float64, AnyOrigin[mut=True]]
-comptime WORKERS = 16
+comptime U8Ptr = Pointer[UInt8, AnyOrigin[mut=True]]
+comptime I8Ptr = Pointer[Int8, AnyOrigin[mut=True]]
+comptime U32Ptr = Pointer[UInt32, AnyOrigin[mut=True]]
+comptime U64Ptr = Pointer[UInt64, AnyOrigin[mut=True]]
+comptime F64Ptr = Pointer[Float64, AnyOrigin[mut=True]]
 comptime TASKS = 64
-comptime PARALLEL_PERMUTATIONS = 64
 comptime MERSENNE61: UInt64 = (UInt64(1) << 61) - 1
 comptime MAX32: UInt64 = (UInt64(1) << 32) - 1
 
@@ -73,20 +70,17 @@ def md_minhash_affine32(
         var begin = num_perm * task // TASKS
         var end = num_perm * (task + 1) // TASKS
         for permutation in range(begin, end):
-            var av = a[permutation]
-            var bv = b[permutation]
-            var smallest = values[permutation]
+            var av = a[unsafe_offset=permutation]
+            var bv = b[unsafe_offset=permutation]
+            var smallest = values[unsafe_offset=permutation]
             for item in range(count):
-                var candidate = av * fmix32(hashes[item]) + bv
+                var candidate = av * fmix32(hashes[unsafe_offset=item]) + bv
                 if candidate < smallest:
                     smallest = candidate
-            values[permutation] = smallest
+            values[unsafe_offset=permutation] = smallest
 
-    if num_perm >= PARALLEL_PERMUTATIONS and count >= 256:
-        parallelize(update_range, TASKS, WORKERS)
-    else:
-        for task in range(TASKS):
-            update_range(task)
+    for task in range(TASKS):
+        update_range(task)
 
 
 @export("md_minhash_affine64")
@@ -107,20 +101,17 @@ def md_minhash_affine64(
         var begin = num_perm * task // TASKS
         var end = num_perm * (task + 1) // TASKS
         for permutation in range(begin, end):
-            var av = a[permutation]
-            var bv = b[permutation]
-            var smallest = values[permutation]
+            var av = a[unsafe_offset=permutation]
+            var bv = b[unsafe_offset=permutation]
+            var smallest = values[unsafe_offset=permutation]
             for item in range(count):
-                var candidate = av * fmix64(hashes[item]) + bv
+                var candidate = av * fmix64(hashes[unsafe_offset=item]) + bv
                 if candidate < smallest:
                     smallest = candidate
-            values[permutation] = smallest
+            values[unsafe_offset=permutation] = smallest
 
-    if num_perm >= PARALLEL_PERMUTATIONS and count >= 256:
-        parallelize(update_range, TASKS, WORKERS)
-    else:
-        for task in range(TASKS):
-            update_range(task)
+    for task in range(TASKS):
+        update_range(task)
 
 
 @export("md_minhash_legacy")
@@ -141,40 +132,43 @@ def md_minhash_legacy(
         var begin = num_perm * task // TASKS
         var end = num_perm * (task + 1) // TASKS
         for permutation in range(begin, end):
-            var av = a[permutation]
-            var bv = b[permutation]
-            var smallest = values[permutation]
+            var av = a[unsafe_offset=permutation]
+            var bv = b[unsafe_offset=permutation]
+            var smallest = values[unsafe_offset=permutation]
             for item in range(count):
-                var candidate = ((av * hashes[item] + bv) % MERSENNE61) & MAX32
+                var candidate = (
+                    (av * hashes[unsafe_offset=item] + bv) % MERSENNE61
+                ) & MAX32
                 if candidate < smallest:
                     smallest = candidate
-            values[permutation] = smallest
+            values[unsafe_offset=permutation] = smallest
 
-    if num_perm >= PARALLEL_PERMUTATIONS and count >= 256:
-        parallelize(update_range, TASKS, WORKERS)
-    else:
-        for task in range(TASKS):
-            update_range(task)
+    for task in range(TASKS):
+        update_range(task)
 
 
 @export("md_jaccard32")
-def md_jaccard32(left_addr: Int, right_addr: Int, count: Int) abi("C") -> Float64:
+def md_jaccard32(
+    left_addr: Int, right_addr: Int, count: Int
+) abi("C") -> Float64:
     var left = u32p(left_addr)
     var right = u32p(right_addr)
     var equal = 0
     for i in range(count):
-        if left[i] == right[i]:
+        if left[unsafe_offset=i] == right[unsafe_offset=i]:
             equal += 1
     return Float64(equal) / Float64(count)
 
 
 @export("md_jaccard64")
-def md_jaccard64(left_addr: Int, right_addr: Int, count: Int) abi("C") -> Float64:
+def md_jaccard64(
+    left_addr: Int, right_addr: Int, count: Int
+) abi("C") -> Float64:
     var left = u64p(left_addr)
     var right = u64p(right_addr)
     var equal = 0
     for i in range(count):
-        if left[i] == right[i]:
+        if left[unsafe_offset=i] == right[unsafe_offset=i]:
             equal += 1
     return Float64(equal) / Float64(count)
 
@@ -184,8 +178,8 @@ def md_merge32(left_addr: Int, right_addr: Int, count: Int) abi("C"):
     var left = u32p(left_addr)
     var right = u32p(right_addr)
     for i in range(count):
-        if right[i] < left[i]:
-            left[i] = right[i]
+        if right[unsafe_offset=i] < left[unsafe_offset=i]:
+            left[unsafe_offset=i] = right[unsafe_offset=i]
 
 
 @export("md_merge64")
@@ -193,8 +187,8 @@ def md_merge64(left_addr: Int, right_addr: Int, count: Int) abi("C"):
     var left = u64p(left_addr)
     var right = u64p(right_addr)
     for i in range(count):
-        if right[i] < left[i]:
-            left[i] = right[i]
+        if right[unsafe_offset=i] < left[unsafe_offset=i]:
+            left[unsafe_offset=i] = right[unsafe_offset=i]
 
 
 @always_inline
@@ -226,11 +220,11 @@ def md_hll_update32(
     var mask = (UInt32(1) << UInt32(precision)) - 1
     var max_rank = 32 - precision
     for i in range(count):
-        var value = hashes[i]
+        var value = hashes[unsafe_offset=i]
         var index = Int(value & mask)
         var rank = rank32(value >> UInt32(precision), max_rank)
-        if rank > Int(reg[index]):
-            reg[index] = Int8(rank)
+        if rank > Int(reg[unsafe_offset=index]):
+            reg[unsafe_offset=index] = Int8(rank)
 
 
 @export("md_hll_update64")
@@ -242,11 +236,11 @@ def md_hll_update64(
     var mask = (UInt64(1) << UInt64(precision)) - 1
     var max_rank = 64 - precision
     for i in range(count):
-        var value = hashes[i]
+        var value = hashes[unsafe_offset=i]
         var index = Int(value & mask)
         var rank = rank64(value >> UInt64(precision), max_rank)
-        if rank > Int(reg[index]):
-            reg[index] = Int8(rank)
+        if rank > Int(reg[unsafe_offset=index]):
+            reg[unsafe_offset=index] = Int8(rank)
 
 
 @export("md_hll_merge")
@@ -254,8 +248,8 @@ def md_hll_merge(left_addr: Int, right_addr: Int, count: Int) abi("C"):
     var left = i8p(left_addr)
     var right = i8p(right_addr)
     for i in range(count):
-        if right[i] > left[i]:
-            left[i] = right[i]
+        if right[unsafe_offset=i] > left[unsafe_offset=i]:
+            left[unsafe_offset=i] = right[unsafe_offset=i]
 
 
 @export("md_score32")
@@ -279,20 +273,17 @@ def md_score32(
             var base = row * cols
             var vector_end = cols - cols % W
             for col in range(0, vector_end, W):
-                var matches = matrix.load[width=W, alignment=1](
+                var matches = matrix.unsafe_load[width=W, alignment=1](
                     base + col
-                ).eq(query.load[width=W, alignment=1](col))
+                ).eq(query.unsafe_load[width=W, alignment=1](col))
                 equal += Int(matches.cast[DType.uint32]().reduce_add())
             for col in range(vector_end, cols):
-                if matrix[base + col] == query[col]:
+                if matrix[unsafe_offset=base + col] == query[unsafe_offset=col]:
                     equal += 1
-            scores[row] = Float64(equal) / Float64(cols)
+            scores[unsafe_offset=row] = Float64(equal) / Float64(cols)
 
-    if rows * cols >= 100_000:
-        parallelize(score_range, TASKS, WORKERS)
-    else:
-        for task in range(TASKS):
-            score_range(task)
+    for task in range(TASKS):
+        score_range(task)
 
 
 @export("md_score64")
@@ -316,17 +307,14 @@ def md_score64(
             var base = row * cols
             var vector_end = cols - cols % W
             for col in range(0, vector_end, W):
-                var matches = matrix.load[width=W, alignment=1](
+                var matches = matrix.unsafe_load[width=W, alignment=1](
                     base + col
-                ).eq(query.load[width=W, alignment=1](col))
+                ).eq(query.unsafe_load[width=W, alignment=1](col))
                 equal += Int(matches.cast[DType.uint64]().reduce_add())
             for col in range(vector_end, cols):
-                if matrix[base + col] == query[col]:
+                if matrix[unsafe_offset=base + col] == query[unsafe_offset=col]:
                     equal += 1
-            scores[row] = Float64(equal) / Float64(cols)
+            scores[unsafe_offset=row] = Float64(equal) / Float64(cols)
 
-    if rows * cols >= 100_000:
-        parallelize(score_range, TASKS, WORKERS)
-    else:
-        for task in range(TASKS):
-            score_range(task)
+    for task in range(TASKS):
+        score_range(task)
