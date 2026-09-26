@@ -1,7 +1,5 @@
 """Compute kernels for MinHash and HyperLogLog."""
 
-from max.algorithm import parallelize
-from std.runtime import initialize_runtime
 from std.sys.info import simd_width_of
 
 comptime U8Ptr = Pointer[UInt8, AnyOrigin[mut=True]]
@@ -10,7 +8,6 @@ comptime U32Ptr = Pointer[UInt32, AnyOrigin[mut=True]]
 comptime U64Ptr = Pointer[UInt64, AnyOrigin[mut=True]]
 comptime F64Ptr = Pointer[Float64, AnyOrigin[mut=True]]
 comptime TASKS = 64
-comptime SCORE_PARALLEL_ELEMENTS = 1_000_000
 comptime MERSENNE61: UInt64 = (UInt64(1) << 61) - 1
 comptime MAX32: UInt64 = (UInt64(1) << 32) - 1
 
@@ -268,8 +265,9 @@ def md_score32(
     var query = u32p(query_addr)
     var scores = f64p(scores_addr)
 
-    @__parameter
-    def score_range(task: Int):
+    # Memory-bound: one 4-byte load and ~2 flops per element, with the query
+    # row resident in L1, so ~0.5 flop/byte. Threading cannot pay here.
+    for task in range(TASKS):
         var begin = rows * task // TASKS
         var end = rows * (task + 1) // TASKS
         for row in range(begin, end):
@@ -286,13 +284,6 @@ def md_score32(
                     equal += 1
             scores[unsafe_offset=row] = Float64(equal) / Float64(cols)
 
-    if rows * cols >= SCORE_PARALLEL_ELEMENTS:
-        initialize_runtime()
-        parallelize[score_range](TASKS)
-    else:
-        for task in range(TASKS):
-            score_range(task)
-
 
 @export("md_score64")
 def md_score64(
@@ -307,8 +298,7 @@ def md_score64(
     var query = u64p(query_addr)
     var scores = f64p(scores_addr)
 
-    @__parameter
-    def score_range(task: Int):
+    for task in range(TASKS):
         var begin = rows * task // TASKS
         var end = rows * (task + 1) // TASKS
         for row in range(begin, end):
@@ -324,10 +314,3 @@ def md_score64(
                 if matrix[unsafe_offset=base + col] == query[unsafe_offset=col]:
                     equal += 1
             scores[unsafe_offset=row] = Float64(equal) / Float64(cols)
-
-    if rows * cols >= SCORE_PARALLEL_ELEMENTS:
-        initialize_runtime()
-        parallelize[score_range](TASKS)
-    else:
-        for task in range(TASKS):
-            score_range(task)
