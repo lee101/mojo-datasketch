@@ -109,16 +109,16 @@ short LSH query) on an Intel Xeon E5-2697 v4 at 2.30 GHz, Linux x86-64, Python
 
 | case | mojo-datasketch | datasketch | result |
 | --- | ---: | ---: | ---: |
-| MinHash.update_batch (100k x 128) | 52.47 ms | 82.42 ms | 1.57x faster |
-| HyperLogLog update (500k) | 132.25 ms | 372.51 ms | 2.82x faster |
-| Jaccard score 50k signatures | 35.17 ms | 96.22 ms | 2.74x faster |
-| MinHashLSH.query (20k index) | 0.02 ms | 0.02 ms | 1.19x faster |
+| MinHash.update_batch (100k x 128) | 53.55 ms | 81.28 ms | 1.52x faster |
+| HyperLogLog update (500k) | 129.11 ms | 375.61 ms | 2.91x faster |
+| Jaccard score 50k signatures | 36.01 ms | 100.48 ms | 2.79x faster |
+| MinHashLSH.query (20k index) | 0.02 ms | 0.02 ms | 1.00x faster |
 
 The HyperLogLog and Jaccard rows compare a mojo-only batch API
 (`HyperLogLog.update_batch`, `jaccard_many`) against upstream's per-element
 Python loop, because upstream 2.0.0 has no equivalent batch API. On the
 shared per-element API the port is slower (see `bench/verify.md`): one
-`HyperLogLog.update` call costs ~18 µs versus ~0.7 µs upstream. No row in
+`HyperLogLog.update` call costs ~17 µs versus ~0.7 µs upstream. No row in
 this table shows the port as slower than upstream, and none was removed or
 reworded; the per-element regressions are documented in `bench/verify.md`
 and `bench/analysis.md` rather than in this headline table.
