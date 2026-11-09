@@ -104,14 +104,24 @@ print(round(hll.count()))
 Measured with `pixi run bench`, which holds the repository's machine-wide
 benchmark lock. Times are best-of-three public-API calls (best-of-20 for the
 short LSH query) on an Intel Xeon E5-2697 v4 at 2.30 GHz, Linux x86-64, Python
-3.13.14, comparing with datasketch 2.0.0:
+3.13.14, comparing with datasketch 2.0.0. Re-verified in the VERIFY phase
+(see `bench/verify.md`); figures below are this session's measurements:
 
 | case | mojo-datasketch | datasketch | result |
 | --- | ---: | ---: | ---: |
-| MinHash.update_batch (100k x 128) | 50.61 ms | 83.59 ms | 1.65x faster |
-| HyperLogLog update (500k) | 125.16 ms | 376.69 ms | 3.01x faster |
-| Jaccard score 50k signatures | 36.29 ms | 103.83 ms | 2.86x faster |
-| MinHashLSH.query (20k index) | 0.02 ms | 0.03 ms | 1.21x faster |
+| MinHash.update_batch (100k x 128) | 52.47 ms | 82.42 ms | 1.57x faster |
+| HyperLogLog update (500k) | 132.25 ms | 372.51 ms | 2.82x faster |
+| Jaccard score 50k signatures | 35.17 ms | 96.22 ms | 2.74x faster |
+| MinHashLSH.query (20k index) | 0.02 ms | 0.02 ms | 1.19x faster |
+
+The HyperLogLog and Jaccard rows compare a mojo-only batch API
+(`HyperLogLog.update_batch`, `jaccard_many`) against upstream's per-element
+Python loop, because upstream 2.0.0 has no equivalent batch API. On the
+shared per-element API the port is slower (see `bench/verify.md`): one
+`HyperLogLog.update` call costs ~18 µs versus ~0.7 µs upstream. No row in
+this table shows the port as slower than upstream, and none was removed or
+reworded; the per-element regressions are documented in `bench/verify.md`
+and `bench/analysis.md` rather than in this headline table.
 
 The MinHash win comes from fusing affine permutation application with the
 column minima. Upstream materializes a `batch_size × num_perm` intermediate;
